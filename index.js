@@ -1,9 +1,10 @@
 require('dotenv').config()
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 app.use(express.json());
 app.use(cors());
@@ -32,16 +33,63 @@ async function run() {
             if(email){
                 query.senderEmail = email;
             }
-            const result = await parcelsCollection.find(query).toArray();
+            const options = { sort: { createdAt: -1 } };
+            const result = await parcelsCollection.find(query, options).toArray();
+            res.send(result)
+        })
+
+        app.get('/parcels/:id', async(req, res)=>{
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id)};
+            const result = await parcelsCollection.findOne(query);
             res.send(result)
         })
 
         app.post('/parcels', async(req, res)=>{
             const parcel = req.body;
+            parcel.createdAt = new Date();
             const result = await parcelsCollection.insertOne(parcel);
             res.send(result)
         })
 
+        app.delete('/parcels/:id', async(req, res)=>{
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id)};
+            const result = await parcelsCollection.deleteOne(query);
+            res.send(result);
+        })
+
+        //payment related api
+        app.post('/create-checkout-session', async (req, res) =>{
+            const paymentInfo = req.body;
+            const amount = parseInt(paymentInfo.cost) * 100;
+
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'USD',
+                            unit_amount: amount,
+                            product_data: {
+                                name:`Please pay for ${paymentInfo.parcelName}`
+                            }
+                        },
+                        quantity: 1,
+                    },
+                ],
+                customer_email: paymentInfo.senderEmail,
+                mode: 'payment',
+                metadata: {
+                    parcelId : paymentInfo.parcelId
+                },
+                success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
+            })
+            res.send({url: session.url})
+        })
+
+
+.
         console.log("Connected to MongoDB");
     } catch (error) {
         console.error(error);
