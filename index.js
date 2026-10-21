@@ -96,7 +96,10 @@ async function run() {
                 mode: 'payment',
                 metadata: {
                     parcelId : paymentInfo.parcelId,
-                    parcelName: paymentInfo.parcelName
+                    parcelName: paymentInfo.parcelName,
+                    receiverName: paymentInfo.receiverName,
+                    receiverAddress: paymentInfo.receiverAddress,
+                    receiverPhnNb: paymentInfo.receiverPhnNb,
                 },
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
@@ -108,6 +111,20 @@ async function run() {
             const sessionId = req.query.session_id;
             const trackingId = generateTrackingId();
             const session = await stripe.checkout.sessions.retrieve(sessionId);
+            console.log(session);
+            const transactionId = session.payment_intent;
+            const query = {transactionId: transactionId};
+            const paymentExist = await paymentCollection.findOne(query);
+            if(paymentExist){
+                return res.send({ 
+                    message: 'already exist', 
+                    transactionId, 
+                    trackingId: paymentExist.trackingId, 
+                    paidAt: new Date(), 
+                    amount: session.amount_total / 100 
+                })
+            }
+
             if (session.payment_status === "paid"){
                 const id = session.metadata.parcelId;
                 const query = {_id: new ObjectId(id)};
@@ -126,7 +143,11 @@ async function run() {
                     parcelName: session.metadata.parcelName,
                     transactionId: session.payment_intent,
                     paymentStatus: session.payment_status,
+                    receiverName: session.metadata.receiverName,
+                    receiverAddress: session.metadata.receiverAddress,
+                    receiverPhnNb: session.metadata.receiverPhnNb,
                     paidAt: new Date(),
+                    trackingId: trackingId,
                 }
                 if(session.payment_status === 'paid'){
                     const paymentResult = await paymentCollection.insertOne(paymentInfo);
@@ -144,8 +165,17 @@ async function run() {
             res.send({success: false})
         })
 
+        app.get('/payments', async(req, res)=>{
+            const email = req.query.email;
+            const query = {};
+            if(email){
+                query.customerEmail = email;
+            };
+            const options = { sort: { paidAt: -1 } };
+            const result = await paymentCollection.find(query, options).toArray();
+            res.send(result)
+        })
 
-.
         console.log("Connected to MongoDB");
     } catch (error) {
         console.error(error);
