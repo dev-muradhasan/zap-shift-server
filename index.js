@@ -7,6 +7,48 @@ const port = process.env.PORT || 3000;
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const crypto = require('crypto');
 
+const { initializeApp, cert, getApps } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+const firebaseKey = require('./zap-shift-firebase-verify-token.json');
+
+if(!firebaseKey){
+    throw new Error('FIREBASE_SERVICE_KEY is missing');
+}
+if(getApps().length === 0){
+    initializeApp({
+        credential: cert(firebaseKey)
+    })
+}
+
+const verifyFBToken = async ( req, res, next) =>{
+    const authHeader = req.headers.authorization;
+    if(!authHeader){
+        return res.status(401).send({
+            message: 'unauthorized access'
+        });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if(!token){
+        return res.status(401).send({
+            message: 'unauthorized access'
+        });
+    }
+
+    try{
+        const userInfo = await getAuth().verifyIdToken(token)
+        console.log('Token verified:', userInfo.email);
+        req.user = userInfo;
+        next();
+    } catch(error){
+        console.log('Firebase Token Error:', error.message);
+        return res.status(401).send({
+            message: 'unauthorized access'
+        });
+    }
+}
+
+
 const generateTrackingId = () => {
     const date = new Date()
         .toISOString()
@@ -19,6 +61,7 @@ const generateTrackingId = () => {
 
     return `ZS-${date}-${uniqueCode}`;
 };
+
 
 app.use(express.json());
 app.use(cors());
@@ -40,13 +83,20 @@ async function run() {
         const db = client.db('zap_shift_db');
         const parcelsCollection = db.collection('parcels');
         const paymentCollection = db.collection('payments');
+        await paymentCollection.createIndex(
+            { transactionId: 1 },
+            { unique: true }
+        );
 
         // parcel api
-        app.get('/parcels', async(req, res)=>{
+        app.get('/parcels', verifyFBToken, async(req, res)=>{
             const query = {};
             const {email} = req.query;
             if(email){
                 query.senderEmail = email;
+                if (email !== req.user.email) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
             }
             const options = { sort: { createdAt: -1 } };
             const result = await parcelsCollection.find(query, options).toArray();
@@ -67,8 +117,13 @@ async function run() {
             res.send(result)
         })
 
-        app.delete('/parcels/:id', async(req, res)=>{
+        app.delete('/parcels/:id', verifyFBToken, async(req, res)=>{
             const id = req.params.id;
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).send({
+                    message: 'Invalid parcel ID'
+                });
+            }
             const query = { _id: new ObjectId(id)};
             const result = await parcelsCollection.deleteOne(query);
             res.send(result);
@@ -111,7 +166,7 @@ async function run() {
             const sessionId = req.query.session_id;
             const trackingId = generateTrackingId();
             const session = await stripe.checkout.sessions.retrieve(sessionId);
-            console.log(session);
+            // console.log(session);
             const transactionId = session.payment_intent;
             const query = {transactionId: transactionId};
             const paymentExist = await paymentCollection.findOne(query);
@@ -165,11 +220,15 @@ async function run() {
             res.send({success: false})
         })
 
-        app.get('/payments', async(req, res)=>{
+        app.get('/payments', verifyFBToken, async(req, res)=>{
             const email = req.query.email;
+            console.log(req.headers);
             const query = {};
             if(email){
                 query.customerEmail = email;
+                if(email !== req.user.email){
+                    return res.status(403).send({message: 'forbidden access'})
+                }
             };
             const options = { sort: { paidAt: -1 } };
             const result = await paymentCollection.find(query, options).toArray();
