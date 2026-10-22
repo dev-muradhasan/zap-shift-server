@@ -81,12 +81,56 @@ async function run() {
         await client.connect();
 
         const db = client.db('zap_shift_db');
+        const userCollection = db.collection('users');
         const parcelsCollection = db.collection('parcels');
         const paymentCollection = db.collection('payments');
         await paymentCollection.createIndex(
             { transactionId: 1 },
             { unique: true }
         );
+
+        // user related api
+        app.post('/users', verifyFBToken, async (req, res) => {
+            const userInfo = req.body;
+            if (req.user?.email !== userInfo.email) {
+                return res.status(403).send({ message: 'Forbidden access' });
+            }
+            const existingUser = await userCollection.findOne({
+                email: userInfo.email,
+            });
+            if (existingUser) {
+                return res.send({
+                    message: 'User already exists',
+                    inserted: false,
+                });
+            }
+            userInfo.createdAt = new Date();
+            userInfo.role = 'user';
+            const result = await userCollection.insertOne(userInfo);
+            res.send({
+                message: 'User created successfully',
+                inserted: true,
+                insertedId: result.insertedId,
+            });
+        });
+
+        app.get('/users', verifyFBToken, async (req, res) => {
+            try {
+                const email = req.user?.email;
+                if (!email) {
+                    return res.status(401).send({
+                        message: 'Email not found in token'
+                    });
+                }
+                const user = await userCollection.findOne({ email });
+                res.send({ exists: !!user });
+            } catch (error) {
+                console.error('GET /users error:', error);
+                res.status(500).send({
+                    message: 'Failed to check user'
+                });
+            }
+        });
 
         // parcel api
         app.get('/parcels', verifyFBToken, async(req, res)=>{
