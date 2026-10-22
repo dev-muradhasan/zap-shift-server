@@ -82,6 +82,7 @@ async function run() {
 
         const db = client.db('zap_shift_db');
         const userCollection = db.collection('users');
+        const ridersCollection = db.collection('riders');
         const parcelsCollection = db.collection('parcels');
         const paymentCollection = db.collection('payments');
         await paymentCollection.createIndex(
@@ -131,6 +132,24 @@ async function run() {
                 });
             }
         });
+
+        // rider related api
+        app.post('/riders', async(req, res)=>{
+            const rider = req.body;
+            rider.status = 'pending';
+            rider.createdAt = new Date();
+            const result = await ridersCollection.insertOne(rider);
+            res.send(result)
+        })
+
+        app.get('/riders', async (req, res)=>{
+            const query = {};
+            if(req.query.status){
+                query.status = req.query.status
+            }
+            const result = await ridersCollection.find(query).toArray();
+            res.send(result)
+        })
 
         // parcel api
         app.get('/parcels', verifyFBToken, async(req, res)=>{
