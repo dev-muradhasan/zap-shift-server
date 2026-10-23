@@ -138,6 +138,18 @@ async function run() {
             }
         });
 
+        app.patch('/users/:id', verifyFBToken, async (req, res)=>{
+            const roleInfo = req.body;
+            const id = req.params.id;
+            const updateDoc = {
+                $set : {
+                    role: roleInfo.role
+                }
+            }
+            const result = await userCollection.updateOne({ _id: new ObjectId(id) }, updateDoc)
+            res.send(result)
+        })
+
         // rider related api
         app.post('/riders', async (req, res) => {
             const rider = req.body;
