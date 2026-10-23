@@ -91,6 +91,11 @@ async function run() {
         );
 
         // user related api
+        app.get('/users', verifyFBToken, async(req, res)=>{
+            const result = await userCollection.find().toArray();
+            res.send(result)
+        })
+
         app.post('/users', verifyFBToken, async (req, res) => {
             const userInfo = req.body;
             if (req.user?.email !== userInfo.email) {
@@ -151,6 +156,17 @@ async function run() {
             res.send(result)
         })
 
+        app.get('/riders/:id', async (req, res)=>{
+            const id = req.params.id;
+            const result = await ridersCollection.findOne({_id: new ObjectId(id)});
+            if (!result) {
+                return res.status(404).send({
+                    message: "Rider not found",
+                });
+            }
+            res.send(result)
+        })
+
         app.patch('/riders/:id', async (req, res) => {
             const status = req.body.status;
             const id = req.params.id;
@@ -205,12 +221,18 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/parcels/:id', async (req, res) => {
-            const id = req.params.id;
-            const query = { _id: new ObjectId(id) };
-            const result = await parcelsCollection.findOne(query);
-            res.send(result)
-        })
+        app.get("/parcels/:id", async (req, res) => {
+            const { id } = req.params;
+            const parcel = await parcelsCollection.findOne({
+                _id: new ObjectId(id),
+            });
+            if (!parcel) {
+                return res.status(404).send({
+                    message: "Parcel not found",
+                });
+            }
+            res.send(parcel);
+        });
 
         app.post('/parcels', async (req, res) => {
             const parcel = req.body;
