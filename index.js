@@ -11,36 +11,36 @@ const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const firebaseKey = require('./zap-shift-firebase-verify-token.json');
 
-if(!firebaseKey){
+if (!firebaseKey) {
     throw new Error('FIREBASE_SERVICE_KEY is missing');
 }
-if(getApps().length === 0){
+if (getApps().length === 0) {
     initializeApp({
         credential: cert(firebaseKey)
     })
 }
 
-const verifyFBToken = async ( req, res, next) =>{
+const verifyFBToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
-    if(!authHeader){
+    if (!authHeader) {
         return res.status(401).send({
             message: 'unauthorized access'
         });
     }
 
     const token = authHeader.split(' ')[1];
-    if(!token){
+    if (!token) {
         return res.status(401).send({
             message: 'unauthorized access'
         });
     }
 
-    try{
+    try {
         const userInfo = await getAuth().verifyIdToken(token)
         console.log('Token verified:', userInfo.email);
         req.user = userInfo;
         next();
-    } catch(error){
+    } catch (error) {
         console.log('Firebase Token Error:', error.message);
         return res.status(401).send({
             message: 'unauthorized access'
@@ -134,7 +134,7 @@ async function run() {
         });
 
         // rider related api
-        app.post('/riders', async(req, res)=>{
+        app.post('/riders', async (req, res) => {
             const rider = req.body;
             rider.status = 'pending';
             rider.createdAt = new Date();
@@ -142,20 +142,59 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/riders', async (req, res)=>{
+        app.get('/riders', async (req, res) => {
             const query = {};
-            if(req.query.status){
+            if (req.query.status) {
                 query.status = req.query.status
             }
             const result = await ridersCollection.find(query).toArray();
             res.send(result)
         })
 
+        app.patch('/riders/:id', async (req, res) => {
+            const status = req.body.status;
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const updateDoc = {
+                $set: {
+                    status: status
+                }
+            }
+            const result = await ridersCollection.updateOne(query, updateDoc);
+            if (status === 'approved') {
+                const email = req.body.email;
+                const userQuery = {email};
+                const updateUser = {
+                    $set : {
+                        role: 'rider'
+                    }
+                }
+                const userResult = await userCollection.updateOne(userQuery, updateUser);
+            } else if(status === 'rejected') {
+                const email = req.body.email;
+                const userQuery = { email };
+                const updateUser = {
+                    $set: {
+                        role: 'user'
+                    }
+                }
+                const userResult = await userCollection.updateOne(userQuery, updateUser);
+            }
+            res.send(result)
+        })
+
+        app.delete('/riders/:id', async (req, res)=>{
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id)};
+            const result = await ridersCollection.deleteOne(query);
+            res.send(result);
+        })
+
         // parcel api
-        app.get('/parcels', verifyFBToken, async(req, res)=>{
+        app.get('/parcels', verifyFBToken, async (req, res) => {
             const query = {};
-            const {email} = req.query;
-            if(email){
+            const { email } = req.query;
+            if (email) {
                 query.senderEmail = email;
                 if (email !== req.user.email) {
                     return res.status(403).send({ message: 'forbidden access' })
@@ -166,34 +205,34 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/parcels/:id', async(req, res)=>{
+        app.get('/parcels/:id', async (req, res) => {
             const id = req.params.id;
-            const query = { _id: new ObjectId(id)};
+            const query = { _id: new ObjectId(id) };
             const result = await parcelsCollection.findOne(query);
             res.send(result)
         })
 
-        app.post('/parcels', async(req, res)=>{
+        app.post('/parcels', async (req, res) => {
             const parcel = req.body;
             parcel.createdAt = new Date();
             const result = await parcelsCollection.insertOne(parcel);
             res.send(result)
         })
 
-        app.delete('/parcels/:id', verifyFBToken, async(req, res)=>{
+        app.delete('/parcels/:id', verifyFBToken, async (req, res) => {
             const id = req.params.id;
             if (!ObjectId.isValid(id)) {
                 return res.status(400).send({
                     message: 'Invalid parcel ID'
                 });
             }
-            const query = { _id: new ObjectId(id)};
+            const query = { _id: new ObjectId(id) };
             const result = await parcelsCollection.deleteOne(query);
             res.send(result);
         })
 
         //payment related api
-        app.post('/create-checkout-session', async (req, res) =>{
+        app.post('/create-checkout-session', async (req, res) => {
             const paymentInfo = req.body;
             const amount = parseInt(paymentInfo.cost) * 100;
 
@@ -204,7 +243,7 @@ async function run() {
                             currency: 'USD',
                             unit_amount: amount,
                             product_data: {
-                                name:`Please pay for ${paymentInfo.parcelName}`
+                                name: `Please pay for ${paymentInfo.parcelName}`
                             }
                         },
                         quantity: 1,
@@ -213,7 +252,7 @@ async function run() {
                 customer_email: paymentInfo.senderEmail,
                 mode: 'payment',
                 metadata: {
-                    parcelId : paymentInfo.parcelId,
+                    parcelId: paymentInfo.parcelId,
                     parcelName: paymentInfo.parcelName,
                     receiverName: paymentInfo.receiverName,
                     receiverAddress: paymentInfo.receiverAddress,
@@ -222,30 +261,30 @@ async function run() {
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
             })
-            res.send({url: session.url})
+            res.send({ url: session.url })
         })
 
-        app.patch('/payment-success', async(req, res)=>{
+        app.patch('/payment-success', async (req, res) => {
             const sessionId = req.query.session_id;
             const trackingId = generateTrackingId();
             const session = await stripe.checkout.sessions.retrieve(sessionId);
             // console.log(session);
             const transactionId = session.payment_intent;
-            const query = {transactionId: transactionId};
+            const query = { transactionId: transactionId };
             const paymentExist = await paymentCollection.findOne(query);
-            if(paymentExist){
-                return res.send({ 
-                    message: 'already exist', 
-                    transactionId, 
-                    trackingId: paymentExist.trackingId, 
-                    paidAt: new Date(), 
-                    amount: session.amount_total / 100 
+            if (paymentExist) {
+                return res.send({
+                    message: 'already exist',
+                    transactionId,
+                    trackingId: paymentExist.trackingId,
+                    paidAt: new Date(),
+                    amount: session.amount_total / 100
                 })
             }
 
-            if (session.payment_status === "paid"){
+            if (session.payment_status === "paid") {
                 const id = session.metadata.parcelId;
-                const query = {_id: new ObjectId(id)};
+                const query = { _id: new ObjectId(id) };
                 const update = {
                     $set: {
                         paymentStatus: "paid",
@@ -254,7 +293,7 @@ async function run() {
                 }
                 const result = await parcelsCollection.updateOne(query, update);
                 const paymentInfo = {
-                    amount: session.amount_total/100,
+                    amount: session.amount_total / 100,
                     currency: session.currency,
                     customerEmail: session.customer_email,
                     parcelId: session.metadata.parcelId,
@@ -267,30 +306,30 @@ async function run() {
                     paidAt: new Date(),
                     trackingId: trackingId,
                 }
-                if(session.payment_status === 'paid'){
+                if (session.payment_status === 'paid') {
                     const paymentResult = await paymentCollection.insertOne(paymentInfo);
-                    res.send({ 
-                        success: true, 
+                    res.send({
+                        success: true,
                         amount: session.amount_total / 100,
-                        trackingId: trackingId, 
-                        transactionId: session.payment_intent, 
-                        modifyParcel: result, 
+                        trackingId: trackingId,
+                        transactionId: session.payment_intent,
+                        modifyParcel: result,
                         paymentInfo: paymentResult,
                         paidAt: new Date(),
                     })
                 }
             }
-            res.send({success: false})
+            res.send({ success: false })
         })
 
-        app.get('/payments', verifyFBToken, async(req, res)=>{
+        app.get('/payments', verifyFBToken, async (req, res) => {
             const email = req.query.email;
             console.log(req.headers);
             const query = {};
-            if(email){
+            if (email) {
                 query.customerEmail = email;
-                if(email !== req.user.email){
-                    return res.status(403).send({message: 'forbidden access'})
+                if (email !== req.user.email) {
+                    return res.status(403).send({ message: 'forbidden access' })
                 }
             };
             const options = { sort: { paidAt: -1 } };
@@ -307,9 +346,9 @@ async function run() {
 run();
 
 app.get('/', (req, res) => {
-  res.send('zap is shifting shifting!');
+    res.send('zap is shifting shifting!');
 });
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+    console.log(`Example app listening on port ${port}`);
 });
