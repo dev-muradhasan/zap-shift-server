@@ -264,6 +264,25 @@ async function run() {
             res.send(result)
         })
 
+        app.get('/parcels/rider', async (req, res) => {
+            try {
+                const { riderEmail, deliveryStatus } = req.query;
+                const query = {
+                    riderEmail,
+                    deliveryStatus,
+                };
+                const parcels = await parcelsCollection
+                    .find(query)
+                    .toArray();
+                res.send(parcels);
+            } catch (error) {
+                console.error("Get rider parcels error:", error);
+                res.status(500).send({
+                    message: "Failed to fetch rider parcels",
+                });
+            }
+        });
+
         app.get("/parcels/:id",  async (req, res) => {
             const { id } = req.params;
             const parcel = await parcelsCollection.findOne({
@@ -280,16 +299,17 @@ async function run() {
         app.patch('/parcels/:id', async(req, res)=>{
             const {riderId, riderName, riderEmail} = req.body;
             const id = req.params.id;
-            const query = {_id: new ObjectId(id)};
-            const updateDoc = {
-                $set: {
-                    deliveryStatus: 'rider-assigned',
-                    riderEmail: riderEmail,
-                    riderId: riderId,
-                    riderName: riderName,
+            const parcelResult = await parcelsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        deliveryStatus: "rider-assigned",
+                        riderEmail,
+                        riderId,
+                        riderName,
+                    },
                 }
-            }
-            const result = await parcelsCollection.updateOne(query, updateDoc);
+            );
 
             // update rider
             const riderQuery = {_id: new ObjectId(riderId)};
@@ -299,7 +319,11 @@ async function run() {
                 }
             }
             const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdateDoc);
-            res.send(riderResult)
+            res.send({
+                message: "Rider assignment processed",
+                parcelResult,
+                riderResult,
+            });
         })
 
         app.post('/parcels', async (req, res) => {
