@@ -269,7 +269,7 @@ async function run() {
                 const { riderEmail, deliveryStatus } = req.query;
                 const query = {
                     riderEmail,
-                    deliveryStatus,
+                    deliveryStatus: {$in: ['rider-assigned', 'rider-arriving']}
                 };
                 const parcels = await parcelsCollection
                     .find(query)
@@ -296,6 +296,7 @@ async function run() {
             res.send(parcel);
         });
 
+        // for assigning the rider data in the parcel
         app.patch('/parcels/:id', async(req, res)=>{
             const {riderId, riderName, riderEmail} = req.body;
             const id = req.params.id;
@@ -324,6 +325,18 @@ async function run() {
                 parcelResult,
                 riderResult,
             });
+        })
+
+        app.patch('/parcels/:id/status', async(req, res)=>{
+            const {deliveryStatus} = req.body;
+            const query = {_id: new ObjectId(req.params.id)};
+            const updatedDoc = {
+                $set : {
+                    deliveryStatus,
+                }
+            }
+            const result = await parcelsCollection.updateOne(query, updatedDoc);
+            res.send(result)
         })
 
         app.post('/parcels', async (req, res) => {
