@@ -267,10 +267,14 @@ async function run() {
         app.get('/parcels/rider', async (req, res) => {
             try {
                 const { riderEmail, deliveryStatus } = req.query;
-                const query = {
-                    riderEmail,
-                    deliveryStatus: {$in: ['rider-assigned', 'rider-arriving']}
-                };
+                let query = { riderEmail };
+                if (deliveryStatus === 'delivered') {
+                    query.deliveryStatus = 'delivered';
+                } else {
+                    query.deliveryStatus = {
+                        $nin: ['delivered'],
+                    };
+                }
                 const parcels = await parcelsCollection
                     .find(query)
                     .toArray();
@@ -334,6 +338,15 @@ async function run() {
                 $set : {
                     deliveryStatus,
                 }
+            }
+            if (deliveryStatus ==="delivered"){
+                const riderQuery = { _id: new ObjectId(req.body.workStatus) };
+                const riderUpdateDoc = {
+                    $set: {
+                        workStatus: 'available'
+                    }
+                }
+                const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdateDoc);
             }
             const result = await parcelsCollection.updateOne(query, updatedDoc);
             res.send(result)
