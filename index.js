@@ -272,7 +272,7 @@ async function run() {
                     query.deliveryStatus = 'delivered';
                 } else {
                     query.deliveryStatus = {
-                        $nin: ['delivered'],
+                        $nin: ['delivered','pending-pickup'],
                     };
                 }
                 const parcels = await parcelsCollection
@@ -351,6 +351,59 @@ async function run() {
             const result = await parcelsCollection.updateOne(query, updatedDoc);
             res.send(result)
         })
+
+        app.patch('/parcels/:id/reject', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const parcel = await parcelsCollection.findOne({
+                    _id: new ObjectId(id)
+                });
+                if (!parcel) {
+                    return res.status(404).send({
+                        message: "Parcel not found"
+                    });
+                }
+                // Make rider available again
+                let riderResult = null;
+                if (parcel.riderId) {
+                    riderResult = await ridersCollection.updateOne(
+                        { _id: new ObjectId(parcel.riderId) },
+                        {
+                            $set: {
+                                workStatus: "available"
+                            }
+                        }
+                    );
+                }
+                // Reset parcel assignment
+                const parcelResult = await parcelsCollection.updateOne(
+                    {
+                        _id: new ObjectId(id)
+                    },
+                    {
+                        $set: {
+                            deliveryStatus: "pending-pickup"
+                        },
+                        $unset: {
+                            riderId: "",
+                            riderName: "",
+                            riderEmail: ""
+                        }
+                    }
+                );
+                res.send({
+                    message: "Parcel rejected and rider is available again",
+                    parcelResult,
+                    riderResult
+                });
+            } catch (error) {
+                console.error("Reject parcel error:", error);
+                res.status(500).send({
+                    message: "Failed to reject parcel"
+                });
+            }
+        });
+
 
         app.post('/parcels', async (req, res) => {
             const parcel = req.body;
