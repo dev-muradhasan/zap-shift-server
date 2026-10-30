@@ -103,6 +103,15 @@ async function run() {
         }
 
         const logTracking = async(trackingId, status)=>{
+            console.log("LOG TRACKING:", {
+                trackingId,
+                status
+            });
+
+            if (!trackingId) {
+                throw new Error('Tracking ID is missing');
+            }
+
             const log = {
                 trackingId,
                 status,
@@ -112,6 +121,13 @@ async function run() {
             const result = await trackingsCollection.insertOne(log);
             return result;
         }
+
+        app.get('/trackings/:trackingId/logs', async(req, res)=>{
+            const trackingId = req.params.trackingId;
+            const query = {trackingId};
+            const result = await trackingsCollection.find(query).sort({ createdAt: 1 }).toArray();
+            res.send(result)
+        })
 
         // user related api
         app.get('/users', verifyFBToken, async(req, res)=>{
@@ -336,8 +352,7 @@ async function run() {
                 }
             }
             const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdateDoc);
-
-            logTracking(trackingId, 'rider-assigned')
+            await logTracking(trackingId, 'rider-assigned')
 
             res.send({
                 message: "Rider assignment processed",
@@ -364,12 +379,11 @@ async function run() {
                 const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdateDoc);
             }
             const result = await parcelsCollection.updateOne(query, updatedDoc);
-
-            logTracking(trackingId, deliveryStatus)
+            await logTracking(trackingId, deliveryStatus)
 
             res.send(result)
         })
-
+       
         app.patch('/parcels/:id/reject', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -476,66 +490,112 @@ async function run() {
         })
 
         app.patch('/payment-success', verifyFBToken, async (req, res) => {
-            const sessionId = req.query.session_id;
-            const trackingId = generateTrackingId();
-            const session = await stripe.checkout.sessions.retrieve(sessionId);
-            // console.log(session);
-            const transactionId = session.payment_intent;
-            const query = { transactionId: transactionId };
-            const paymentExist = await paymentCollection.findOne(query);
-            if (paymentExist) {
-                return res.send({
-                    message: 'already exist',
-                    transactionId,
-                    trackingId: paymentExist.trackingId,
-                    paidAt: new Date(),
-                    amount: session.amount_total / 100
-                })
-            }
-
-            if (session.payment_status === "paid") {
-                const id = session.metadata.parcelId;
-                const query = { _id: new ObjectId(id) };
-                const update = {
-                    $set: {
-                        paymentStatus: "paid",
-                        deliveryStatus: 'pending-pickup',
-                        trackingId: trackingId
+            try {
+                const sessionId = req.query.session_id;
+                if (!sessionId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: 'Session ID is required'
+                    });
+                }
+                const session = await stripe.checkout.sessions.retrieve(sessionId);
+                if (session.payment_status !== 'paid') {
+                    return res.status(400).send({
+                        success: false,
+                        message: 'Payment not completed'
+                    });
+                }
+                const transactionId = session.payment_intent;
+                const parcelId = session.metadata.parcelId;
+                // Check existing payment
+                let paymentExist = await paymentCollection.findOne({
+                    transactionId
+                });
+                // Find parcel
+                const parcel = await parcelsCollection.findOne({
+                    _id: new ObjectId(parcelId)
+                });
+                if (!parcel) {
+                    return res.status(404).send({
+                        success: false,
+                        message: 'Parcel not found'
+                    });
+                }
+                let trackingId;
+                if (paymentExist) {
+                    // Use previous tracking ID
+                    trackingId = paymentExist.trackingId;
+                } else {
+                    // Reuse parcel tracking ID or generate once
+                    trackingId = parcel.trackingId || generateTrackingId();
+                    const paidAt = new Date();
+                    const paymentInfo = {
+                        amount: session.amount_total / 100,
+                        currency: session.currency,
+                        customerEmail: session.customer_email,
+                        parcelId,
+                        parcelName: session.metadata.parcelName,
+                        transactionId,
+                        paymentStatus: session.payment_status,
+                        receiverName: session.metadata.receiverName,
+                        receiverAddress: session.metadata.receiverAddress,
+                        receiverPhnNb: session.metadata.receiverPhnNb,
+                        paidAt,
+                        trackingId
+                    };
+                    try {
+                        await paymentCollection.insertOne(paymentInfo);
+                    } catch (error) {
+                        // Handle simultaneous duplicate requests
+                        if (error.code === 11000) {
+                            paymentExist = await paymentCollection.findOne({
+                                transactionId
+                            });
+                            if (!paymentExist) {
+                                throw error;
+                            }
+                            trackingId = paymentExist.trackingId;
+                        } else {
+                            throw error;
+                        }
                     }
                 }
-                const result = await parcelsCollection.updateOne(query, update);
-                const paymentInfo = {
+                // Update parcel with the same tracking ID
+                await parcelsCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: {
+                            paymentStatus: 'paid',
+                            deliveryStatus: 'pending-pickup',
+                            trackingId
+                        }
+                    }
+                );
+                // Check existing pending-pickup log
+                const existingLog = await trackingsCollection.findOne({
+                    trackingId,
+                    status: 'pending-pickup'
+                });
+                if (!existingLog) {
+                    await logTracking(trackingId, 'pending-pickup');
+                }
+                return res.send({
+                    success: true,
+                    message: paymentExist ? 'Already paid' : 'Payment successful',
                     amount: session.amount_total / 100,
-                    currency: session.currency,
-                    customerEmail: session.customer_email,
-                    parcelId: session.metadata.parcelId,
-                    parcelName: session.metadata.parcelName,
-                    transactionId: session.payment_intent,
-                    paymentStatus: session.payment_status,
-                    receiverName: session.metadata.receiverName,
-                    receiverAddress: session.metadata.receiverAddress,
-                    receiverPhnNb: session.metadata.receiverPhnNb,
-                    paidAt: new Date(),
-                    trackingId: trackingId,
-                }
-                if (session.payment_status === 'paid') {
-                    const paymentResult = await paymentCollection.insertOne(paymentInfo);
-
-                    logTracking(trackingId, 'pending-pickup');
-
-                    res.send({
-                        success: true,
-                        amount: session.amount_total / 100,
-                        trackingId: trackingId,
-                        transactionId: session.payment_intent,
-                        modifyParcel: result,
-                        paymentInfo: paymentResult,
-                        paidAt: new Date(),
-                    })
-                }
+                    trackingId,
+                    transactionId
+                });
+            } catch (error) {
+                console.error('PAYMENT SUCCESS ERROR:', error);
+                return res.status(500).send({
+                    success: false,
+                    message: error.message
+                });
             }
-            res.send({ success: false })
-        })
+        });
+
+      
 
         app.get('/payments', verifyFBToken, async (req, res) => {
             const email = req.query.email;
