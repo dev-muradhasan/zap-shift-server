@@ -92,17 +92,17 @@ async function run() {
         );
 
         // verify admin 
-        const verifyAdmin = async(req, res, next)=>{
+        const verifyAdmin = async (req, res, next) => {
             const email = req.user.email;
-            const query = {email};
+            const query = { email };
             const user = await userCollection.findOne(query);
-            if(!user || user.role !== 'admin'){
-                res.status(403).send({message: 'forbidden access'})
+            if (!user || user.role !== 'admin') {
+                res.status(403).send({ message: 'forbidden access' })
             }
             next();
         }
 
-        const logTracking = async(trackingId, status)=>{
+        const logTracking = async (trackingId, status) => {
             console.log("LOG TRACKING:", {
                 trackingId,
                 status
@@ -122,16 +122,16 @@ async function run() {
             return result;
         }
 
-        app.get('/trackings/:trackingId/logs', async(req, res)=>{
+        app.get('/trackings/:trackingId/logs', async (req, res) => {
             const trackingId = req.params.trackingId;
-            const query = {trackingId};
+            const query = { trackingId };
             const result = await trackingsCollection.find(query).sort({ createdAt: 1 }).toArray();
             res.send(result)
         })
 
         // user related api
-        app.get('/users', verifyFBToken, async(req, res)=>{
-            const result = await userCollection.find().sort({createdAt: -1}).toArray();
+        app.get('/users', verifyFBToken, async (req, res) => {
+            const result = await userCollection.find().sort({ createdAt: -1 }).toArray();
             res.send(result)
         })
 
@@ -152,14 +152,14 @@ async function run() {
                 });
             }
         });
-        
-        app.get('/users/:id', async(req, res)=>{})
 
-        app.get('/users/:email/role', verifyFBToken, async(req, res)=>{
+        app.get('/users/:id', async (req, res) => { })
+
+        app.get('/users/:email/role', verifyFBToken, async (req, res) => {
             const email = req.params.email;
-            const query = {email};
+            const query = { email };
             const user = await userCollection.findOne(query);
-            res.send({role: user?.role || 'user'})
+            res.send({ role: user?.role || 'user' })
         })
 
         app.post('/users', verifyFBToken, async (req, res) => {
@@ -186,11 +186,11 @@ async function run() {
             });
         });
 
-        app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res)=>{
+        app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
             const roleInfo = req.body;
             const id = req.params.id;
             const updateDoc = {
-                $set : {
+                $set: {
                     role: roleInfo.role
                 }
             }
@@ -207,8 +207,8 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/riders', verifyFBToken,  async (req, res) => {
-            const {status, district, workStatus} = req.query;
+        app.get('/riders', verifyFBToken, async (req, res) => {
+            const { status, district, workStatus } = req.query;
             const query = {};
             if (status) {
                 query.status = status
@@ -223,9 +223,9 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/riders/:id', verifyFBToken, async (req, res)=>{
+        app.get('/riders/:id', verifyFBToken, async (req, res) => {
             const id = req.params.id;
-            const result = await ridersCollection.findOne({_id: new ObjectId(id)});
+            const result = await ridersCollection.findOne({ _id: new ObjectId(id) });
             if (!result) {
                 return res.status(404).send({
                     message: "Rider not found",
@@ -241,20 +241,20 @@ async function run() {
             const updateDoc = {
                 $set: {
                     status: status,
-                    workStatus: `${status==='approved'? 'available': ''}`
+                    workStatus: `${status === 'approved' ? 'available' : ''}`
                 }
             }
             const result = await ridersCollection.updateOne(query, updateDoc);
             if (status === 'approved') {
                 const email = req.body.email;
-                const userQuery = {email};
+                const userQuery = { email };
                 const updateUser = {
-                    $set : {
+                    $set: {
                         role: 'rider'
                     }
                 }
                 const userResult = await userCollection.updateOne(userQuery, updateUser);
-            } else if(status === 'rejected') {
+            } else if (status === 'rejected') {
                 const email = req.body.email;
                 const userQuery = { email };
                 const updateUser = {
@@ -267,9 +267,9 @@ async function run() {
             res.send(result)
         })
 
-        app.delete('/riders/:id', verifyFBToken, verifyAdmin, async (req, res)=>{
+        app.delete('/riders/:id', verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
-            const query = { _id: new ObjectId(id)};
+            const query = { _id: new ObjectId(id) };
             const result = await ridersCollection.deleteOne(query);
             res.send(result);
         })
@@ -277,7 +277,7 @@ async function run() {
         // parcel api
         app.get('/parcels', verifyFBToken, async (req, res) => {
             const query = {};
-            const { email , deliveryStatus } = req.query;
+            const { email, deliveryStatus } = req.query;
             if (email) {
                 query.senderEmail = email;
                 if (email !== req.user.email) {
@@ -300,7 +300,7 @@ async function run() {
                     query.deliveryStatus = 'delivered';
                 } else {
                     query.deliveryStatus = {
-                        $nin: ['delivered','pending-pickup'],
+                        $nin: ['delivered', 'payment-complete'],
                     };
                 }
                 const parcels = await parcelsCollection
@@ -315,7 +315,7 @@ async function run() {
             }
         });
 
-        app.get("/parcels/:id",  async (req, res) => {
+        app.get("/parcels/:id", async (req, res) => {
             const { id } = req.params;
             const parcel = await parcelsCollection.findOne({
                 _id: new ObjectId(id),
@@ -329,7 +329,7 @@ async function run() {
         });
 
         // for assigning the rider data in the parcel
-        app.patch('/parcels/:id', async(req, res)=>{
+        app.patch('/parcels/:id', async (req, res) => {
             const { riderId, riderName, riderEmail, trackingId } = req.body;
             const id = req.params.id;
             const parcelResult = await parcelsCollection.updateOne(
@@ -345,7 +345,7 @@ async function run() {
             );
 
             // update rider
-            const riderQuery = {_id: new ObjectId(riderId)};
+            const riderQuery = { _id: new ObjectId(riderId) };
             const riderUpdateDoc = {
                 $set: {
                     workStatus: 'in-delivery'
@@ -361,15 +361,15 @@ async function run() {
             });
         })
 
-        app.patch('/parcels/:id/status', async(req, res)=>{
-            const {deliveryStatus, riderId, trackingId} = req.body;
-            const query = {_id: new ObjectId(req.params.id)};
+        app.patch('/parcels/:id/status', async (req, res) => {
+            const { deliveryStatus, riderId, trackingId } = req.body;
+            const query = { _id: new ObjectId(req.params.id) };
             const updatedDoc = {
-                $set : {
+                $set: {
                     deliveryStatus,
                 }
             }
-            if (deliveryStatus ==="delivered"){
+            if (deliveryStatus === "delivered") {
                 const riderQuery = { _id: new ObjectId(riderId) };
                 const riderUpdateDoc = {
                     $set: {
@@ -383,7 +383,7 @@ async function run() {
 
             res.send(result)
         })
-       
+
         app.patch('/parcels/:id/reject', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -414,7 +414,7 @@ async function run() {
                     },
                     {
                         $set: {
-                            deliveryStatus: "pending-pickup"
+                            deliveryStatus: "payment-complete"
                         },
                         $unset: {
                             riderId: "",
@@ -439,7 +439,12 @@ async function run() {
 
         app.post('/parcels', async (req, res) => {
             const parcel = req.body;
+            const trackingId = generateTrackingId();
             parcel.createdAt = new Date();
+            parcel.trackingId = trackingId
+
+            logTracking(trackingId, 'parcel-created')
+
             const result = await parcelsCollection.insertOne(parcel);
             res.send(result)
         })
@@ -482,6 +487,7 @@ async function run() {
                     receiverName: paymentInfo.receiverName,
                     receiverAddress: paymentInfo.receiverAddress,
                     receiverPhnNb: paymentInfo.receiverPhnNb,
+                    trackingId: paymentInfo.trackingId
                 },
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
@@ -527,7 +533,7 @@ async function run() {
                     trackingId = paymentExist.trackingId;
                 } else {
                     // Reuse parcel tracking ID or generate once
-                    trackingId = parcel.trackingId || generateTrackingId();
+                    trackingId = parcel.trackingId ;
                     const paidAt = new Date();
                     const paymentInfo = {
                         amount: session.amount_total / 100,
@@ -566,18 +572,18 @@ async function run() {
                     {
                         $set: {
                             paymentStatus: 'paid',
-                            deliveryStatus: 'pending-pickup',
+                            deliveryStatus: 'payment-complete',
                             trackingId
                         }
                     }
                 );
-                // Check existing pending-pickup log
+                // Check existing payment-complete log
                 const existingLog = await trackingsCollection.findOne({
                     trackingId,
-                    status: 'pending-pickup'
+                    status: 'payment-complete'
                 });
                 if (!existingLog) {
-                    await logTracking(trackingId, 'pending-pickup');
+                    await logTracking(trackingId, 'payment-complete');
                 }
                 return res.send({
                     success: true,
@@ -595,7 +601,7 @@ async function run() {
             }
         });
 
-      
+
 
         app.get('/payments', verifyFBToken, async (req, res) => {
             const email = req.query.email;
