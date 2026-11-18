@@ -6,10 +6,13 @@ const app = express();
 const port = process.env.PORT || 3000;
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const crypto = require("crypto");
+const { getAuth } = require("firebase-admin/auth");
 
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
-const { getAuth } = require("firebase-admin/auth");
-const firebaseKey = require("./zap-shift-firebase-verify-token.json");
+// const firebaseKey = require("./zap-shift-firebase-verify-token.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const firebaseKey = JSON.parse(decoded);
 
 if (!firebaseKey) {
   throw new Error("FIREBASE_SERVICE_KEY is missing");
