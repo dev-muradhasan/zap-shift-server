@@ -427,19 +427,18 @@ async function run() {
       }
     });
 
-      app.get("/riders/:id", verifyFBToken, async (req, res) => {
-        const id = req.params.id;
-        const result = await ridersCollection.findOne({
-          _id: new ObjectId(id),
-        });
-        if (!result) {
-          return res.status(404).send({
-            message: "Rider not found",
-          });
-        }
-        res.send(result);
+    app.get("/riders/:id", verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      const result = await ridersCollection.findOne({
+        _id: new ObjectId(id),
       });
-
+      if (!result) {
+        return res.status(404).send({
+          message: "Rider not found",
+        });
+      }
+      res.send(result);
+    });
 
     app.patch("/riders/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const status = req.body.status;
@@ -853,15 +852,38 @@ async function run() {
 
     console.log("Connected to MongoDB");
   } catch (error) {
-    console.error(error);
+    console.error("MongoDB Connection Error:", error);
+    throw error;
   }
 }
 
 run();
 
+
+let initPromise;
+
 app.get("/", (req, res) => {
   res.send("zap is shifting shifting!");
 });
+
+module.exports = async (req, res) => {
+  try {
+    if (!initPromise) {
+      initPromise = run();
+    }
+
+    await initPromise;
+
+    return app(req, res);
+  } catch (error) {
+    console.error("Server Initialization Error:", error);
+
+    return res.status(500).send({
+      message: "Internal Server Error",
+    });
+  }
+};
+
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
