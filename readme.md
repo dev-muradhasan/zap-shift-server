@@ -1,3 +1,5 @@
+**Fronted Repository:** https://github.com/dev-muradhasan/zap-shift-client
+
 # Zap-Shift Server 🚚
 
 A powerful and secure backend API for **Zap-Shift**, a parcel delivery management system. It handles user authentication, parcel management, rider assignments, payment processing, parcel tracking, and delivery operations.
