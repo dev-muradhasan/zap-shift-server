@@ -6,6 +6,9 @@
   "author": "",
   "type": "commonjs",
   "main": "index.js",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "test": "node index.js",
     "dev": "nodemon index.js"
